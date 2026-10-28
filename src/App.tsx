@@ -1407,19 +1407,29 @@ ${files.rulesJsonString}
                         </p>
                       </div>
                     </div>
-                    <a
-                      href="https://github.com/guvenKazici1/app-limit-apk"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-1.5 text-xs font-semibold text-slate-900 bg-white hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5"
-                    >
-                      GitHub&apos;da Aç ↗
-                    </a>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <a
+                        href="https://github.com/guvenKazici1/app-limit-apk"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-1.5 text-xs font-semibold text-slate-900 bg-white hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap flex items-center justify-center gap-1.5"
+                      >
+                        GitHub Deposu ↗
+                      </a>
+                      <a
+                        href="https://github.com/guvenKazici1/app-limit-apk/actions"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-1.5 text-xs font-semibold text-emerald-300 bg-emerald-950 border border-emerald-800 hover:bg-emerald-900 rounded-lg transition-colors whitespace-nowrap flex items-center justify-center gap-1.5"
+                      >
+                        APK Derleme Takibi (Actions) ↗
+                      </a>
+                    </div>
                   </div>
 
                   <div className="pt-2 border-t border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
                     <div className="text-slate-400"># Kodları GitHub reponuza göndermek için komutlar:</div>
-                    <div className="bg-slate-950 p-2.5 rounded border border-slate-800 text-emerald-300 select-all font-mono">
+                    <div className="bg-slate-950 p-2.5 rounded border border-slate-800 text-emerald-300 select-all font-mono leading-relaxed">
                       git remote add origin https://github.com/guvenKazici1/app-limit-apk.git<br/>
                       git add . &amp;&amp; git commit -m &quot;DinginSüre APK ve kilit mantığı güncellendi&quot;<br/>
                       git push -u origin main
