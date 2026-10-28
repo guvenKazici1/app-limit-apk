@@ -1,0 +1,6 @@
+{
+  "name": "DinginSüre - Akıllı Uygulama Kilidi ve Zaman Yöneticisi",
+  "description": "Android cihazlar için günlük uygulama kullanım süresi sınırı, belirli saat kısıtlaması, kör rastgele şifreleme ve sabah 09:00 otomatik kilit sıfırlama özellikli dijital denge uygulaması ve APK proje üreticisi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
