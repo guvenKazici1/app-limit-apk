@@ -491,8 +491,17 @@ ${files.rulesJsonString}
             </button>
           </nav>
 
-          {/* Zone 3: 1 Primary Action & GitHub Link */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Zone 3: Direct APK Download & GitHub Link */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <a
+              href="https://github.com/guvenKazici1/app-limit-apk/releases/latest/download/DinginSure-AppLimit-debug.apk"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-2 shadow-xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>APK İndir (.apk)</span>
+            </a>
             <a
               href="https://github.com/guvenKazici1/app-limit-apk"
               target="_blank"
@@ -502,13 +511,6 @@ ${files.rulesJsonString}
               <Code2 className="w-3.5 h-3.5 text-slate-700" />
               <span>guvenKazici1/app-limit-apk</span>
             </a>
-            <button
-              onClick={handleDownloadAndroidBundle}
-              className="px-4 py-2 text-xs font-semibold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-2"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Android Projesini İndir
-            </button>
           </div>
         </div>
       </header>
@@ -559,6 +561,53 @@ ${files.rulesJsonString}
                 Sabah 09:00 Kilidi Aç
               </button>
             </div>
+          </div>
+        </section>
+
+        {/* Direct APK Download Link & GitHub Actions Banner */}
+        <section className="bg-emerald-950 text-white rounded-2xl p-5 border border-emerald-800 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-800 flex items-center justify-center shrink-0 text-emerald-200 mt-0.5">
+              <Download className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white">Android APK İndirme &amp; Derleme Bağlantısı</h2>
+                <span className="text-[10px] font-mono bg-emerald-800 text-emerald-200 border border-emerald-700 px-2 py-0.5 rounded">
+                  GitHub Actions Hazır
+                </span>
+              </div>
+              <p className="text-xs text-emerald-200 mt-1 max-w-2xl leading-relaxed">
+                Uygulama kaynak kodları ve Android Studio projesi <code className="text-white font-mono">guvenKazici1/app-limit-apk</code> reposuna bağlıdır. İster doğrudan Android proje paketini indirin, ister GitHub Actions üzerinden derlenen `.apk` çıktısını alın.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <a
+              href="https://github.com/guvenKazici1/app-limit-apk/releases/latest/download/DinginSure-AppLimit-debug.apk"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2.5 text-xs font-bold text-slate-950 bg-emerald-300 hover:bg-emerald-200 rounded-xl transition-colors shrink-0 flex items-center gap-2 shadow-sm"
+            >
+              <Download className="w-4 h-4 text-slate-950" />
+              <span>Doğrudan APK Dosyasını İndir (.apk)</span>
+            </a>
+            <button
+              onClick={handleDownloadAndroidBundle}
+              className="px-4 py-2.5 text-xs font-semibold text-white bg-emerald-800 hover:bg-emerald-700 border border-emerald-600 rounded-xl transition-colors shrink-0 cursor-pointer flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              <span>Android Projesi (.txt / Kotlin) İndir</span>
+            </button>
+            <a
+              href="https://github.com/guvenKazici1/app-limit-apk/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 text-xs font-medium text-emerald-200 hover:text-white underline shrink-0"
+            >
+              GitHub Sürümler (Releases) ↗
+            </a>
           </div>
         </section>
 
