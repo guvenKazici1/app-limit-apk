@@ -491,14 +491,23 @@ ${files.rulesJsonString}
             </button>
           </nav>
 
-          {/* Zone 3: 1 Primary Action */}
-          <div className="flex items-center shrink-0">
+          {/* Zone 3: 1 Primary Action & GitHub Link */}
+          <div className="flex items-center gap-3 shrink-0">
+            <a
+              href="https://github.com/guvenKazici1/app-limit-apk"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-2"
+            >
+              <Code2 className="w-3.5 h-3.5 text-slate-700" />
+              <span>guvenKazici1/app-limit-apk</span>
+            </a>
             <button
               onClick={handleDownloadAndroidBundle}
               className="px-4 py-2 text-xs font-semibold text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-2"
             >
               <Download className="w-3.5 h-3.5" />
-              Android APK Projesini İndir
+              Android Projesini İndir
             </button>
           </div>
         </div>
@@ -1377,9 +1386,46 @@ ${files.rulesJsonString}
                   </button>
                 </div>
 
-                <pre className="bg-slate-950 text-slate-100 font-mono text-xs p-4 rounded-xl overflow-x-auto max-h-[420px] leading-relaxed">
+                <pre className="bg-slate-950 text-slate-100 font-mono text-xs p-4 rounded-xl overflow-x-auto max-h-[360px] leading-relaxed">
                   <code>{currentCodeString}</code>
                 </pre>
+
+                {/* GitHub Repository Integration Box */}
+                <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Code2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center gap-2">
+                          <span>GitHub Repositoriesi: guvenKazici1/app-limit-apk</span>
+                          <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-mono">
+                            Otomatik APK Derleme Bağlı
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Her push yapıldığında GitHub Actions <code className="text-emerald-300">.github/workflows/build-apk.yml</code> dosyası otomatik çalışarak Android APK çıktısı üretir.
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href="https://github.com/guvenKazici1/app-limit-apk"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-1.5 text-xs font-semibold text-slate-900 bg-white hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5"
+                    >
+                      GitHub&apos;da Aç ↗
+                    </a>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
+                    <div className="text-slate-400"># Kodları GitHub reponuza göndermek için komutlar:</div>
+                    <div className="bg-slate-950 p-2.5 rounded border border-slate-800 text-emerald-300 select-all font-mono">
+                      git remote add origin https://github.com/guvenKazici1/app-limit-apk.git<br/>
+                      git add . &amp;&amp; git commit -m &quot;DinginSüre APK ve kilit mantığı güncellendi&quot;<br/>
+                      git push -u origin main
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
