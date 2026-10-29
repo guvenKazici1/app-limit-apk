@@ -27,8 +27,16 @@ import com.dinginsure.appblocker.security.BlindPasswordVault
 class MainActivity : Activity() {
 
     private lateinit var listContainer: LinearLayout
-    private lateinit var permissionStatusBanner: TextView
-    private val uiHandler = Handler(Looper.getMainLooper())
+    private lateinit var liveActiveBanner: TextView
+    private var autoPermissionDialog: AlertDialog? = null
+    private val uiRefreshHandler = Handler(Looper.getMainLooper())
+
+    private val liveUiRefreshRunnable = object : Runnable {
+        override fun run() {
+            updateLiveBanner()
+            uiRefreshHandler.postDelayed(this, 2000L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,9 +48,62 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         startTrackerForegroundService()
-        updatePermissionStatusBanner()
+        checkAndAutoRouteMissingPermissions()
+        updateLiveBanner()
         if (::listContainer.isInitialized) {
             refreshAppList()
+        }
+        uiRefreshHandler.post(liveUiRefreshRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        uiRefreshHandler.removeCallbacks(liveUiRefreshRunnable)
+    }
+
+    /**
+     * Uygulama içinde izin butonu aramaya gerek kalmadan, eksik izin varsa
+     * açılışta otomatik tespit eder ve doğrudan ilgili Android izin ekranını açar.
+     */
+    private fun checkAndAutoRouteMissingPermissions() {
+        autoPermissionDialog?.dismiss()
+
+        if (!BlindPasswordVault.hasUsageStatsPermission(this)) {
+            autoPermissionDialog = AlertDialog.Builder(this)
+                .setCancelable(false)
+                .setTitle("Otomatik Süre Sayacı İçin Tek SeferlikOnay 🌿")
+                .setMessage("Hangi uygulamayı açarsanız açın otomatik tespit edip süre tutabilmesi için açılacak ekranda 'DinginSüre'yi seçip izni aktif edin.")
+                .setPositiveButton("Ayarlara Git (Otomatik Aç)") { _, _ ->
+                    try {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_USAGE_ACCESS_SETTINGS,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
+                }
+                .show()
+            return
+        }
+
+        if (!Settings.canDrawOverlays(this)) {
+            autoPermissionDialog = AlertDialog.Builder(this)
+                .setCancelable(false)
+                .setTitle("Tatlı Emoji Uyarı Ekranı Onayı 🐣")
+                .setMessage("Süre dolduğunda ekranda tatlı bir emoji ve nazik uyarı mesajı belirmesi için 'Diğer uygulamaların üzerinde göster' iznini aktif edin.")
+                .setPositiveButton("İzni Aç") { _, _ ->
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                }
+                .setNegativeButton("Şimdilik Geç", null)
+                .show()
+            return
         }
     }
 
@@ -76,93 +137,115 @@ class MainActivity : Activity() {
         }
 
         val subtitleText = TextView(this).apply {
-            text = "Uygulamalarınız için günlük süre ve akşam kapanış saati belirleyin. Süre dolduğunda tatlı bir emoji ve nazik uyarı sonrası uygulama kapanır, kimsenin bilmediği rastgele şifreyle ertesi sabah 09:00'a kadar kilitlenir."
+            text = "Hangi uygulamayı açarsanız açın otomatik olarak tespit edilir ve arka planda süresi sayılır. Süre dolduğunda tatlı bir emoji ve nazik uyarı sonrası uygulama kapanır, sabah 09:00'a kadar kör şifreyle kilitlenir."
             textSize = 14f
             setTextColor(Color.parseColor("#475569"))
             setPadding(0, 12, 0, 24)
         }
 
-        permissionStatusBanner = TextView(this).apply {
-            textSize = 13f
-            setPadding(32, 24, 32, 24)
+        liveActiveBanner = TextView(this).apply {
+            textSize = 14f
+            setPadding(36, 28, 36, 28)
             setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#065F46"))
         }
 
-        val permColumn = LinearLayout(this).apply {
+        // Varsayılan otomatik süre kartı
+        val globalAutoCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 24, 0, 32)
+            setBackgroundColor(Color.parseColor("#ECFDF5"))
+            setPadding(36, 28, 36, 28)
         }
 
-        val usagePermButton = Button(this).apply {
-            text = "1. Kullanım Süresi Erişimi İzni Ver (Zorunlu - Süre Sayacı İçin)"
+        val globalTitle = TextView(this).apply {
+            text = "⚡ Otomatik Algılama & Varsayılan Süre"
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#065F46"))
+        }
+
+        val globalDesc = TextView(this).apply {
+            val defMin = BlindPasswordVault.getGlobalDefaultLimitMinutes(this@MainActivity)
+            text = "Özel süre belirlemediğiniz herhangi bir uygulamaya girdiğinizde otomatik olarak günlük $defMin dakika sınırla süre tutmaya başlar."
+            textSize = 13f
+            setTextColor(Color.parseColor("#047857"))
+            setPadding(0, 8, 0, 16)
+        }
+
+        val changeDefaultBtn = Button(this).apply {
+            text = "Varsayılan Otomatik Süreyi Değiştir (${BlindPasswordVault.getGlobalDefaultLimitMinutes(this@MainActivity)} dk)"
             setOnClickListener {
-                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                showGlobalLimitDialog(globalDesc, this)
             }
         }
 
-        val overlayButton = Button(this).apply {
-            text = "2. Diğer Uygulamaların Üstünde Gösterim İzni Ver (Emoji Ekranı İçin)"
-            setOnClickListener {
-                if (!Settings.canDrawOverlays(this@MainActivity)) {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                    startActivity(intent)
-                } else {
-                    Toast.makeText(this@MainActivity, "Üstte gösterim izni zaten aktif!", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-
-        val accButton = Button(this).apply {
-            text = "3. Erişilebilirlik Servisini Aç (Anında Kapatma İçin)"
-            setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-        }
-
-        permColumn.addView(usagePermButton)
-        permColumn.addView(overlayButton)
-        permColumn.addView(accButton)
+        globalAutoCard.addView(globalTitle)
+        globalAutoCard.addView(globalDesc)
+        globalAutoCard.addView(changeDefaultBtn)
 
         listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(0, 32, 0, 0)
         }
 
         mainColumn.addView(titleText)
         mainColumn.addView(subtitleText)
-        mainColumn.addView(permissionStatusBanner)
-        mainColumn.addView(permColumn)
+        mainColumn.addView(liveActiveBanner, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = 24 })
+        mainColumn.addView(globalAutoCard)
         mainColumn.addView(listContainer)
 
         rootScroll.addView(mainColumn)
         setContentView(rootScroll)
 
-        updatePermissionStatusBanner()
+        updateLiveBanner()
         refreshAppList()
     }
 
-    private fun updatePermissionStatusBanner() {
-        if (!::permissionStatusBanner.isInitialized) return
+    private fun showGlobalLimitDialog(descView: TextView, btnView: Button) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(BlindPasswordVault.getGlobalDefaultLimitMinutes(this@MainActivity).toString())
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Otomatik Varsayılan Günlük Süre (Dakika)")
+            .setMessage("Açtığınız herhangi bir uygulama için varsayılan günlük kaç dakika süre tutulsun?")
+            .setView(input)
+            .setPositiveButton("Kaydet") { _, _ ->
+                val mins = input.text.toString().toIntOrNull()?.coerceAtLeast(1) ?: 30
+                BlindPasswordVault.setGlobalDefaultLimitMinutes(this, mins)
+                descView.text = "Özel süre belirlemediğiniz herhangi bir uygulamaya girdiğinizde otomatik olarak günlük $mins dakika sınırla süre tutmaya başlar."
+                btnView.text = "Varsayılan Otomatik Süreyi Değiştir ($mins dk)"
+                refreshAppList()
+            }
+            .setNegativeButton("İptal", null)
+            .show()
+    }
+
+    private fun updateLiveBanner() {
+        if (!::liveActiveBanner.isInitialized) return
         val hasUsage = BlindPasswordVault.hasUsageStatsPermission(this)
-        val hasOverlay = Settings.canDrawOverlays(this)
-        val hasAcc = BlindPasswordVault.isAccessibilityServiceEnabled(this)
+        if (!hasUsage) {
+            liveActiveBanner.text = "⚠️ Otomatik süre sayacının başlaması için izin bekleniyor..."
+            liveActiveBanner.setBackgroundColor(Color.parseColor("#991B1B"))
+            return
+        }
 
-        val statusLines = mutableListOf<String>()
-        statusLines.add(if (hasUsage) "✅ 1. Kullanım Süresi Sayacı İzni: AKTİF" else "❌ 1. Kullanım Süresi Sayacı İzni: KAPALI (Süre tutması için 1. butona basıp DinginSüre'ye izin verin)")
-        statusLines.add(if (hasOverlay) "✅ 2. Üstte Gösterim İzni: AKTİF" else "⚠️ 2. Üstte Gösterim İzni: KAPALI")
-        statusLines.add(if (hasAcc) "✅ 3. Erişilebilirlik Servisi: AKTİF" else "⚠️ 3. Erişilebilirlik Servisi: KAPALI")
+        val rules = BlindPasswordVault.loadRules(this)
+        val totalUsedSec = rules.sumOf { BlindPasswordVault.getEffectiveUsedSecondsToday(this, it.packageName) }
+        val lockedCount = rules.count { BlindPasswordVault.isAppCurrentlyLocked(this, it.packageName) }
 
-        permissionStatusBanner.text = statusLines.joinToString("\n")
-        permissionStatusBanner.setBackgroundColor(
-            if (hasUsage) Color.parseColor("#065F46") else Color.parseColor("#991B1B")
-        )
+        liveActiveBanner.text = "✅ Otomatik Uygulama Algılama Aktif\n" +
+            "Bugün Toplam Süre: ${totalUsedSec / 60}dk ${totalUsedSec % 60}sn • Kilitli Uygulama: $lockedCount • Sabah 09:00 Sıfırlama"
+        liveActiveBanner.setBackgroundColor(Color.parseColor("#065F46"))
     }
 
     private fun refreshAppList() {
         listContainer.removeAllViews()
         val savedRules = BlindPasswordVault.loadRules(this).associateBy { it.packageName }
+        val defaultLimit = BlindPasswordVault.getGlobalDefaultLimitMinutes(this)
 
         val pm = packageManager
         val installedApps = pm.getInstalledApplications(0)
@@ -181,9 +264,9 @@ class MainActivity : Activity() {
             val rule = savedRules[pkg] ?: AppRuleConfig(
                 packageName = pkg,
                 appName = label,
-                isTracked = false,
-                dailyLimitMinutes = 30,
-                cutoffHour = "22:30",
+                isTracked = true,
+                dailyLimitMinutes = defaultLimit,
+                cutoffHour = "23:00",
                 emoji = "🌿",
                 politeMessage = "Bugünlük $label süren doldu güzel insan! Gözlerini dinlendirip gerçek dünyaya dönme vakti, yarın sabah 09:00'da görüşürüz."
             )
@@ -199,11 +282,6 @@ class MainActivity : Activity() {
                 setPadding(36, 32, 36, 32)
             }
 
-            val topRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-
             val nameText = TextView(this).apply {
                 text = "${rule.emoji}  $label"
                 textSize = 17f
@@ -213,24 +291,27 @@ class MainActivity : Activity() {
 
             val statusText = TextView(this).apply {
                 text = when {
-                    isLocked -> "🔒 KİLİTLİ (Kör Şifre Atandı • Yarın 09:00'da Açılır)"
-                    rule.isTracked -> "⏱️ Bugün Kullanılan: ${usedMin}dk ${remSec}sn / Hedef: ${rule.dailyLimitMinutes}dk • Kapanış: ${rule.cutoffHour.ifEmpty { "Yok" }}"
-                    else -> "Denetim Kapalı (Süre tutmak için aşağıdan ayarlayın)"
+                    isLocked -> "🔒 KİLİTLİ (Kör Şifre Atandı • Yarın Sabah 09:00'da Açılır)"
+                    rule.isTracked -> "⏱️ Otomatik Sayaç Aktif: ${usedMin}dk ${remSec}sn / ${rule.dailyLimitMinutes}dk • Kapanış: ${rule.cutoffHour.ifEmpty { "Yok" }}"
+                    else -> "Bu uygulama için sayaç durduruldu"
                 }
                 textSize = 13f
-                setTextColor(if (isLocked) Color.parseColor("#DC2626") else if (rule.isTracked) Color.parseColor("#047857") else Color.parseColor("#64748B"))
+                setTextColor(
+                    if (isLocked) Color.parseColor("#DC2626")
+                    else if (rule.isTracked) Color.parseColor("#047857")
+                    else Color.parseColor("#64748B")
+                )
                 setPadding(0, 8, 0, 12)
             }
 
             val editButton = Button(this).apply {
-                text = if (rule.isTracked) "Süreyi Düzenle (${rule.dailyLimitMinutes} dk)" else "Süre Sınırı Başlat"
+                text = "Özel Süre / Saat Ayarla (${rule.dailyLimitMinutes} dk)"
                 setOnClickListener {
                     showEditRuleDialog(rule)
                 }
             }
 
-            topRow.addView(nameText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            card.addView(topRow)
+            card.addView(nameText)
             card.addView(statusText)
             card.addView(editButton)
 
@@ -251,8 +332,7 @@ class MainActivity : Activity() {
         }
 
         val trackCheck = CheckBox(this).apply {
-            text = "Bu uygulama için günlük süre sayacını aktif et"
-            // Kullanıcı süre ayarlamak için pencereyi açtığında otomatik seçili gelsin!
+            text = "Otomatik süre sayacı aktif"
             isChecked = true
         }
 
@@ -268,7 +348,7 @@ class MainActivity : Activity() {
         }
 
         val cutoffLabel = TextView(this).apply {
-            text = "Akşam Kapanış Saati (SS:DD veya boş bırakın):"
+            text = "Akşam Kapanış Saati (SS:DD):"
             setPadding(0, 16, 0, 4)
         }
 
@@ -310,7 +390,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("${rule.appName} Sınır Ayarları")
             .setView(layout)
-            .setPositiveButton("Kaydet ve Sayacı Başlat") { _, _ ->
+            .setPositiveButton("Kaydet") { _, _ ->
                 val updated = rule.copy(
                     isTracked = trackCheck.isChecked,
                     dailyLimitMinutes = limitInput.text.toString().toIntOrNull()?.coerceAtLeast(1) ?: 30,
@@ -321,15 +401,7 @@ class MainActivity : Activity() {
                 BlindPasswordVault.saveRule(this, updated)
                 startTrackerForegroundService()
                 refreshAppList()
-                if (!BlindPasswordVault.hasUsageStatsPermission(this)) {
-                    Toast.makeText(
-                        this,
-                        "Sürenin sayılması için lütfen üstteki '1. Kullanım Süresi Erişimi İzni Ver' butonuna basıp izin verin!",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    Toast.makeText(this, "${rule.appName} için sayaç aktif edildi!", Toast.LENGTH_SHORT).show()
-                }
+                Toast.makeText(this, "${rule.appName} süresi güncellendi!", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("İptal", null)
             .show()

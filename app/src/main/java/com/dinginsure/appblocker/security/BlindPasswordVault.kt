@@ -27,6 +27,8 @@ object BlindPasswordVault {
     private const val PREFS_NAME = "dinginsure_blind_vault"
     private const val KEY_RULES_JSON = "configured_rules_json"
     private const val KEY_LAST_ACTIVE_PKG = "last_active_foreground_pkg"
+    private const val KEY_GLOBAL_AUTO_TRACK = "global_auto_track_enabled"
+    private const val KEY_GLOBAL_DEFAULT_LIMIT = "global_default_limit_minutes"
     private val secureRandom = SecureRandom()
 
     fun hasUsageStatsPermission(context: Context): Boolean {
@@ -48,6 +50,30 @@ object BlindPasswordVault {
         return enabledServices.contains(expectedComponentName, ignoreCase = true)
     }
 
+    fun isGlobalAutoTrackEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_GLOBAL_AUTO_TRACK, true)
+    }
+
+    fun setGlobalAutoTrackEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_GLOBAL_AUTO_TRACK, enabled)
+            .apply()
+    }
+
+    fun getGlobalDefaultLimitMinutes(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_GLOBAL_DEFAULT_LIMIT, 30)
+    }
+
+    fun setGlobalDefaultLimitMinutes(context: Context, minutes: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_GLOBAL_DEFAULT_LIMIT, minutes.coerceAtLeast(1))
+            .apply()
+    }
+
     fun setLastDetectedForegroundApp(context: Context, pkg: String?) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -62,13 +88,13 @@ object BlindPasswordVault {
     }
 
     /**
-     * Queries UsageStatsManager for the currently active foreground app on the device.
+     * Hangi uygulama açılırsa açılsın UsageStatsManager üzerinden anında tespit eder.
      */
     fun detectForegroundAppFromUsageStats(context: Context): String? {
         if (!hasUsageStatsPermission(context)) return null
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         val endTime = System.currentTimeMillis()
-        val beginTime = endTime - 1000L * 60 * 30 // Look back 30 minutes for latest foreground transition
+        val beginTime = endTime - 1000L * 60 * 60 // Son 60 dakikadaki en son ekran geçişine bak
         val usageEvents = usm.queryEvents(beginTime, endTime)
         val event = UsageEvents.Event()
         var lastForegroundPkg: String? = null
@@ -89,13 +115,76 @@ object BlindPasswordVault {
     }
 
     /**
-     * Queries Android UsageStatsManager for total foreground time since 09:00 AM today,
-     * and combines it with our internal 1-second precision counter so whichever is higher is used.
+     * Herhangi bir uygulama açıldığında kuralı yoksa bile otomatik kural oluşturur
+     * ve hemen süre tutmaya başlar.
      */
+    fun getOrCreateAutoRuleForPackage(context: Context, packageName: String): AppRuleConfig {
+        val existingRules = loadRules(context)
+        val found = existingRules.find { it.packageName == packageName }
+        if (found != null) {
+            return found
+        }
+
+        val label = try {
+            val pm = context.packageManager
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            pm.getApplicationLabel(appInfo).toString()
+        } catch (_: Exception) {
+            packageName.substringAfterLast(".")
+        }
+
+        val defaultLimit = getGlobalDefaultLimitMinutes(context)
+        val autoTrack = isGlobalAutoTrackEnabled(context)
+
+        val newRule = AppRuleConfig(
+            packageName = packageName,
+            appName = label,
+            isTracked = autoTrack,
+            dailyLimitMinutes = defaultLimit,
+            cutoffHour = "23:00",
+            emoji = "🌿",
+            politeMessage = "Bugünlük $label kullanım süren doldu güzel insan! Gözlerini dinlendirip gerçek dünyaya dönme vakti, yarın sabah 09:00'da kilit kendiliğinden açılacak."
+        )
+        saveRule(context, newRule)
+        return newRule
+    }
+
     fun getEffectiveUsedSecondsToday(context: Context, packageName: String): Long {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val manualSeconds = prefs.getLong("used_seconds_$packageName", 0L)
+
+        // Ayrıca Android'in kendi UsageStats sayacına da bakıp hangisi büyükse onu döndür
+        if (hasUsageStatsPermission(context)) {
+            try {
+                val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+                if (usm != null) {
+                    val startOfCycle = getTodayNineAmOrYesterdayNineAmMillis()
+                    val now = System.currentTimeMillis()
+                    val stats = usm.queryAndAggregateUsageStats(startOfCycle, now)
+                    val sysMillis = stats[packageName]?.totalTimeInForeground ?: 0L
+                    val sysSeconds = sysMillis / 1000L
+                    if (sysSeconds > manualSeconds && !isAppCurrentlyLocked(context, packageName)) {
+                        return manualSeconds
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
         return manualSeconds
+    }
+
+    private fun getTodayNineAmOrYesterdayNineAmMillis(): Long {
+        val now = Calendar.getInstance()
+        val nineAm = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 9)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        if (now.before(nineAm)) {
+            nineAm.add(Calendar.DAY_OF_YEAR, -1)
+        }
+        return nineAm.timeInMillis
     }
 
     fun incrementUsedSeconds(context: Context, packageName: String): Long {
@@ -155,10 +244,14 @@ object BlindPasswordVault {
     }
 
     fun unlockAllForMorning(context: Context) {
-        val rules = loadRules(context)
-        for (rule in rules) {
-            unlockAndResetForMorning(context, rule.packageName)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        for (key in prefs.all.keys) {
+            if (key.startsWith("is_locked_") || key.startsWith("lock_hash_") || key.startsWith("used_seconds_")) {
+                editor.remove(key)
+            }
         }
+        editor.apply()
     }
 
     fun calculateNextMorningNineAmMillis(): Long {
@@ -216,7 +309,7 @@ object BlindPasswordVault {
                         appName = obj.optString("appName"),
                         isTracked = obj.optBoolean("isTracked", true),
                         dailyLimitMinutes = obj.optInt("dailyLimitMinutes", 30),
-                        cutoffHour = obj.optString("cutoffHour", "22:30"),
+                        cutoffHour = obj.optString("cutoffHour", "23:00"),
                         emoji = obj.optString("emoji", "🌿"),
                         politeMessage = obj.optString(
                             "politeMessage",

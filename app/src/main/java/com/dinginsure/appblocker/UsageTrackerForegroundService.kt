@@ -23,14 +23,6 @@ import com.dinginsure.appblocker.security.AppRuleConfig
 import com.dinginsure.appblocker.security.BlindPasswordVault
 import java.util.Calendar
 
-/**
- * UsageTrackerForegroundService
- * -------------------------------------------------------------------
- * Arka planda kesintisiz çalışarak her 1 saniyede bir açık olan uygulamayı
- * hem UsageStatsManager hem de AccessibilityService üzerinden tespit eder,
- * süresini saniye saniye sayar ve süre dolduğunda / saat geçtiğinde
- * tatlı emoji uyarısını gösterip uygulamayı tamamen kapatır.
- */
 class UsageTrackerForegroundService : Service() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -61,9 +53,8 @@ class UsageTrackerForegroundService : Service() {
 
     private fun tickSecond() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (!powerManager.isInteractive) return // Ekran kapalıysa sayma
+        if (!powerManager.isInteractive) return
 
-        // 1. Önce UsageStatsManager ile aktif uygulamayı bul, yoksa AccessibilityService'in son yakaladığı pakete bak
         val usagePkg = BlindPasswordVault.detectForegroundAppFromUsageStats(this)
         val accPkg = BlindPasswordVault.getLastDetectedForegroundApp(this)
         val activePkg = usagePkg ?: accPkg ?: return
@@ -72,16 +63,18 @@ class UsageTrackerForegroundService : Service() {
             return
         }
 
-        val rules = BlindPasswordVault.loadRules(this)
-        val rule = rules.find { it.packageName == activePkg && it.isTracked } ?: return
+        // Hangi uygulama açılırsa açılsın otomatik olarak tespit et ve kuralını getir/oluştur
+        val rule = BlindPasswordVault.getOrCreateAutoRuleForPackage(this, activePkg)
+        if (!rule.isTracked) return
 
         val usedSeconds = BlindPasswordVault.incrementUsedSeconds(this, rule.packageName)
         val limitSeconds = rule.dailyLimitMinutes * 60L
         val isPastCutoff = isCurrentTimePastCutoff(rule.cutoffHour)
         val isQuotaExceeded = usedSeconds >= limitSeconds
 
-        // Bildirimi güncel tut
-        updateNotificationText("${rule.emoji} ${rule.appName}: ${usedSeconds / 60}dk ${usedSeconds % 60}sn / ${rule.dailyLimitMinutes}dk")
+        updateNotificationText(
+            "${rule.emoji} ${rule.appName} açık: ${usedSeconds / 60}dk ${usedSeconds % 60}sn / ${rule.dailyLimitMinutes}dk"
+        )
 
         if (BlindPasswordVault.isAppCurrentlyLocked(this, rule.packageName) || isQuotaExceeded || isPastCutoff) {
             BlindPasswordVault.generateUnknowableLockForApp(this, rule.packageName)
@@ -92,11 +85,14 @@ class UsageTrackerForegroundService : Service() {
     private fun isSystemOrLauncherPackage(pkg: String): Boolean {
         val lower = pkg.lowercase()
         return lower == "com.android.systemui" ||
+            lower == "com.android.settings" ||
             lower.contains("launcher") ||
             lower.contains("nexuslauncher") ||
             lower.contains("trebuchet") ||
             lower.contains("miui.home") ||
             lower.contains("sec.android.app.launcher") ||
+            lower.contains("packageinstaller") ||
+            lower.contains("permissioncontroller") ||
             lower == "android"
     }
 
@@ -120,7 +116,6 @@ class UsageTrackerForegroundService : Service() {
         if (now - lastInterceptTimeMillis < 2500L) return
         lastInterceptTimeMillis = now
 
-        // 1. Önce Erişilebilirlik Servisi açıksa GLOBAL_ACTION_HOME gönder, değilse doğrudan HOME Intent fırlat
         AppInterceptorAccessibilityService.instance?.performHomeAction() ?: run {
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
@@ -129,7 +124,6 @@ class UsageTrackerForegroundService : Service() {
             startActivity(homeIntent)
         }
 
-        // 2. Tatlı emoji ve nazik uyarıyı ekranda göster
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(
                 this,
@@ -217,7 +211,7 @@ class UsageTrackerForegroundService : Service() {
             nm.createNotificationChannel(channel)
         }
 
-        val notification = buildNotification(channelId, "Arka plan uygulama süre sayacı aktif 🌿")
+        val notification = buildNotification(channelId, "Otomatik uygulama algılama ve süre sayacı aktif 🌿")
         startForeground(1001, notification)
     }
 
