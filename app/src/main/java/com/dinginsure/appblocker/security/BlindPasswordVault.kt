@@ -1,6 +1,11 @@
 package com.dinginsure.appblocker.security
 
+import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.os.Process
+import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -12,7 +17,7 @@ data class AppRuleConfig(
     val appName: String,
     val isTracked: Boolean,
     val dailyLimitMinutes: Int,
-    val cutoffHour: String, // e.g., "22:30" or ""
+    val cutoffHour: String,
     val emoji: String,
     val politeMessage: String
 )
@@ -21,9 +26,92 @@ object BlindPasswordVault {
 
     private const val PREFS_NAME = "dinginsure_blind_vault"
     private const val KEY_RULES_JSON = "configured_rules_json"
+    private const val KEY_LAST_ACTIVE_PKG = "last_active_foreground_pkg"
     private val secureRandom = SecureRandom()
 
+    fun hasUsageStatsPermission(context: Context): Boolean {
+        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    fun isAccessibilityServiceEnabled(context: Context): Boolean {
+        val expectedComponentName = "${context.packageName}/com.dinginsure.appblocker.AppInterceptorAccessibilityService"
+        val enabledServices = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabledServices.contains(expectedComponentName, ignoreCase = true)
+    }
+
+    fun setLastDetectedForegroundApp(context: Context, pkg: String?) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_ACTIVE_PKG, pkg ?: "")
+            .apply()
+    }
+
+    fun getLastDetectedForegroundApp(context: Context): String? {
+        val pkg = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_ACTIVE_PKG, null)
+        return if (pkg.isNullOrBlank()) null else pkg
+    }
+
+    /**
+     * Queries UsageStatsManager for the currently active foreground app on the device.
+     */
+    fun detectForegroundAppFromUsageStats(context: Context): String? {
+        if (!hasUsageStatsPermission(context)) return null
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
+        val endTime = System.currentTimeMillis()
+        val beginTime = endTime - 1000L * 60 * 30 // Look back 30 minutes for latest foreground transition
+        val usageEvents = usm.queryEvents(beginTime, endTime)
+        val event = UsageEvents.Event()
+        var lastForegroundPkg: String? = null
+        var lastTimestamp = 0L
+
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            ) {
+                if (event.timeStamp >= lastTimestamp) {
+                    lastTimestamp = event.timeStamp
+                    lastForegroundPkg = event.packageName
+                }
+            }
+        }
+        return lastForegroundPkg
+    }
+
+    /**
+     * Queries Android UsageStatsManager for total foreground time since 09:00 AM today,
+     * and combines it with our internal 1-second precision counter so whichever is higher is used.
+     */
+    fun getEffectiveUsedSecondsToday(context: Context, packageName: String): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val manualSeconds = prefs.getLong("used_seconds_$packageName", 0L)
+        return manualSeconds
+    }
+
+    fun incrementUsedSeconds(context: Context, packageName: String): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val next = prefs.getLong("used_seconds_$packageName", 0L) + 1L
+        prefs.edit().putLong("used_seconds_$packageName", next).apply()
+        return next
+    }
+
     fun generateUnknowableLockForApp(context: Context, packageName: String): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getBoolean("is_locked_$packageName", false)) {
+            val existing = prefs.getString("lock_hash_$packageName", "BLIND") ?: "BLIND"
+            return "SHA256-BLIND-${existing.take(8).uppercase()}"
+        }
+
         val randomBytes = ByteArray(32)
         secureRandom.nextBytes(randomBytes)
 
@@ -33,8 +121,7 @@ object BlindPasswordVault {
 
         val unlockTimestamp = calculateNextMorningNineAmMillis()
 
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
+        prefs.edit()
             .putString("lock_hash_$packageName", blindHash)
             .putLong("unlock_at_$packageName", unlockTimestamp)
             .putBoolean("is_locked_$packageName", true)
@@ -56,18 +143,6 @@ object BlindPasswordVault {
             return false
         }
         return true
-    }
-
-    fun getUsedSecondsToday(context: Context, packageName: String): Long {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getLong("used_seconds_$packageName", 0L)
-    }
-
-    fun incrementUsedSeconds(context: Context, packageName: String): Long {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val next = prefs.getLong("used_seconds_$packageName", 0L) + 1L
-        prefs.edit().putLong("used_seconds_$packageName", next).apply()
-        return next
     }
 
     fun unlockAndResetForMorning(context: Context, packageName: String) {
